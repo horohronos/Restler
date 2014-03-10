@@ -93,20 +93,20 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
      * used to set the extension manually
      */
     public $formatString = '';
-    private $_models;
-    private $_bodyParam;
+    protected $_models;
+    protected $_bodyParam;
     /**
      * @var bool|stdClass
      */
-    private $_fullDataRequested = false;
-    private $crud = array(
+    protected $_fullDataRequested = false;
+    protected $crud = array(
         'POST' => 'create',
         'GET' => 'retrieve',
         'PUT' => 'update',
         'DELETE' => 'delete',
         'PATCH' => 'partial update'
     );
-    private static $prefixes = array(
+    protected static $prefixes = array(
         'get' => 'retrieve',
         'index' => 'list',
         'post' => 'create',
@@ -114,8 +114,8 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         'patch' => 'modify',
         'delete' => 'remove',
     );
-    private $_authenticated = false;
-    private $cacheName = '';
+    protected $_authenticated = false;
+    protected $cacheName = '';
 
     public function __construct()
     {
@@ -237,11 +237,8 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                     //they are listed else where under that static part name
                     continue;
                 }
-                if (
-                    self::$hideProtected
-                    && !$this->_authenticated
-                    && $route['accessLevel'] > 1
-                ) {
+                
+                if (!static::verifyAccess($route)){
                     continue;
                 }
                 foreach (static::$excludedPaths as $exclude) {
@@ -254,13 +251,6 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                 }
                 $m = $route['metadata'];
                 if ($id == '' && $m['resourcePath'] != '') {
-                    continue;
-                }
-                if ($this->_authenticated
-                    && static::$accessControlFunction
-                    && (!call_user_func(
-                        static::$accessControlFunction, $route['metadata']))
-                ) {
                     continue;
                 }
                 if (isset($filter[$httpMethod][$fullPath])) {
@@ -291,7 +281,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                     }
                 }
                 $nickname = $this->_nickname($route);
-                $parts[self::$placeFormatExtensionBeforeDynamicParts ? $pos : 0]
+                $parts[static::$placeFormatExtensionBeforeDynamicParts ? $pos : 0]
                     .= $this->formatString;
                 $fullPath = implode('/', $parts);
                 $description = isset(
@@ -315,13 +305,10 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                         . '  (the api method) to write here';
                 }
                 $operation = $this->_operation(
+                    $route,
                     $nickname,
                     $httpMethod,
-                    $m['description'] .
-                    ($route['accessLevel'] > 2
-                        ? static::$apiDescriptionSuffixSymbols[2]
-                        : static::$apiDescriptionSuffixSymbols[$route['accessLevel']]
-                    ),
+                    $m['description'],
                     $m['longDescription']
                 );
                 if (isset($m['throws'])) {
@@ -426,12 +413,12 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
     {
         static $hash = array();
         $method = $route['methodName'];
-        if(isset(self::$prefixes[$method])){
-            $method = self::$prefixes[$method];
+        if(isset(static::$prefixes[$method])){
+            $method = static::$prefixes[$method];
         } else {
             $method = str_replace(
-                array_keys(self::$prefixes),
-                array_values(self::$prefixes),
+                array_keys(static::$prefixes),
+                array_values(static::$prefixes),
                 $method
             );
         }
@@ -443,13 +430,13 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $method;
     }
 
-    private function _noNamespace($className)
+    protected function _noNamespace($className)
     {
         $className = explode('\\', $className);
         return end($className);
     }
 
-    private function _operationListing($resourcePath = '/')
+    protected function _operationListing($resourcePath = '/')
     {
         $r = $this->_resourceListing();
         $r->resourcePath = $resourcePath;
@@ -457,7 +444,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _resourceListing()
+    protected function _resourceListing()
     {
         $r = new stdClass();
         $r->apiVersion = (string)$this->restler->_requestedApiVersion;
@@ -467,7 +454,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _api($path, $description = '')
+    protected function _api($path, $description = '')
     {
         $r = new stdClass();
         $r->path = $path;
@@ -479,7 +466,8 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _operation(
+    protected function _operation(
+        $route,
         $nickname,
         $httpMethod = 'GET',
         $summary = 'description',
@@ -500,14 +488,17 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
 
         $r->parameters = array();
 
-        $r->summary = $summary;
+        $r->summary = $summary.($route['accessLevel'] > 2
+            ? static::$apiDescriptionSuffixSymbols[2]
+            : static::$apiDescriptionSuffixSymbols[$route['accessLevel']]
+        );
         $r->notes = $notes;
 
         $r->errorResponses = array();
         return $r;
     }
 
-    private function _parameter($param)
+    protected function _parameter($param)
     {
         $r = new stdClass();
         $r->name = $param['name'];
@@ -578,7 +569,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _appendToBody($p)
+    protected function _appendToBody($p)
     {
         if ($p->name === Defaults::$fullRequestDataName) {
             $this->_fullDataRequested = $p;
@@ -595,7 +586,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         $this->_bodyParam['names'][$p->name] = $p;
     }
 
-    private function _getBody()
+    protected function _getBody()
     {
         $r = new stdClass();
         $n = isset($this->_bodyParam['names'])
@@ -693,7 +684,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _model($className, $instance = null)
+    protected function _model($className, $instance = null)
     {
         $id = $this->_noNamespace($className);
         if(isset($this->_models->{$id})){
@@ -905,7 +896,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return $r;
     }
 
-    private function _loadResource ($url)
+    protected function _loadResource ($url)
     {
         $ch = curl_init($this->restler->getBaseUrl() . $url
             . (empty($_GET) ? '' : '?' . http_build_query($_GET)));
@@ -920,7 +911,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
         return array($http_status, $result);
     }
 
-    private function _mapResources(array $allRoutes, array &$map, $version = 1)
+    protected function _mapResources(array $allRoutes, array &$map, $version = 1)
     {
         foreach ($allRoutes as $fullPath => $routes) {
             $path = explode('/', $fullPath);
@@ -931,11 +922,7 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                 if (in_array($httpMethod, static::$excludedHttpMethods)) {
                     continue;
                 }
-                if (
-                    self::$hideProtected
-                    && !$this->_authenticated
-                    && $route['accessLevel'] > 1
-                ) {
+                if (!static::verifyAccess($route)){
                     continue;
                 }
 
@@ -946,14 +933,6 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
                     } elseif (0 === strpos($fullPath, $exclude)) {
                         continue 2;
                     }
-                }
-
-                if ($this->_authenticated
-                    && static::$accessControlFunction
-                    && (!call_user_func(
-                        static::$accessControlFunction, $route['metadata']))
-                ) {
-                    continue;
                 }
 
                 $res = $resource
@@ -976,5 +955,30 @@ class Resources implements iUseAuthentication, iProvideMultiVersionApi
     public static function __getMaximumSupportedVersion()
     {
         return Scope::get('Restler')->getApiVersion();
+    }
+    
+    /**
+     * Verifies that the requesting user is allowed to view the docs for this API
+     * 
+     * @param $route
+     * 
+     * @return boolean True if the user should be able to view this API's docs
+     */
+    protected function verifyAccess($route){
+        if (
+            static::$hideProtected
+            && !$this->_authenticated
+            && $route['accessLevel'] > 1
+        ) {
+            return false;
+        }
+        if ($this->_authenticated
+            && static::$accessControlFunction
+            && (!call_user_func(
+                static::$accessControlFunction, $route['metadata']))
+        ) {
+            return false;
+        }
+        return true;
     }
 }
